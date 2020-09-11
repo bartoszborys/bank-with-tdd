@@ -8,10 +8,11 @@ namespace Bank.Abstractions
 {
     public interface IBank
     {
-        IEnumerable<string> GetHistory();
-        Task UpdateATM(int money);
-        IEnumerable<object> CreditStatus();
+        IEnumerable<IHistory> GetHistory();
+        void UpdateATM(int ammount);
+        double CreditAmmountLeft();
+        double CreditMonthsLeft();
         void Credit(int creditValue, int months);
-        Task UpdateTransfer(long validBankAccount, int v);
+        void UpdateTransfer(string bankAccountNumber, int value);
     }
 }

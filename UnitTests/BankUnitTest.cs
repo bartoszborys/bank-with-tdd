@@ -4,7 +4,8 @@ using Xunit;
 using Bank;
 using Bank.Abstractions;
 using Bank.DefaultBank;
-using Bank.Exceptions;
+using System.Threading.Tasks;
+using System.Linq;
 
 namespace BaknUnitTests
 {
@@ -12,27 +13,86 @@ namespace BaknUnitTests
     {
         private class MockDbContext : IDatabase
         {
-            public long balance = 0;
-            public List<MockBankHistory> bankHistory;
-            public DateTime creditStart;
+            public double loanInterestRate = 3.7;
+            public double balance = 0;
+            public List<MockBankHistory> bankHistory = new List<MockBankHistory>();
+            public long creditMonthsPassed;
             public long creditMonths;
             public long creditAmmount;
+            public double minimalCreditBalace = 0.15;
+
+            public double getBalance()
+            {
+                return this.balance;
+            }
+
+            public void getCredit(int creditValue, int months)
+            {
+                this.creditAmmount = creditValue;
+                this.creditMonths = months;
+                this.balance += creditValue;
+            }
+
+            public double getCreditAmmountLeft()
+            {
+                return (this.creditAmmount * this.loanInterestRate) - (this.creditAmmount * this.loanInterestRate / this.creditMonths) * this.creditMonthsPassed;
+            }
+
+            public double getCreditMonthsLeft()
+            {
+                return this.creditMonths - this.creditMonthsPassed;
+            }
+
+            public IEnumerable<IHistory> getHistory(string bankAccountNumber)
+            {
+                return this.bankHistory;
+            }
+
+            public void incomeTransfer(string bankAccountNumber, int ammount)
+            {
+                this.bankHistory.Add((new MockBankHistory(ammount, TransferType.ReceiveTransfer, bankAccountNumber)));
+                this.balance += ammount;
+            }
+
+            public bool isAllowedToGetCredit(string bankAccountNumber, int creditValue)
+            {
+                return this.balance >= (creditValue * this.minimalCreditBalace);
+            }
+
+            public void outcomeTransfer(string bankAccountNumber, int ammount)
+            {
+                this.bankHistory.Add((new MockBankHistory(ammount, TransferType.SendTransfer, bankAccountNumber)));
+                this.balance -= ammount;
+            }
+
+            public void updateBalance(string bankAccountNumber, int ammount)
+            {
+                if(ammount >= 0)
+                {
+                    this.bankHistory.Add((new MockBankHistory(ammount, TransferType.InsertATM, bankAccountNumber)));
+                }
+                else
+                {
+                    this.bankHistory.Add((new MockBankHistory(ammount, TransferType.WithdrawATM, bankAccountNumber)));
+                }
+                this.balance += ammount;
+            }
         }
 
-        public class MockBankHistory
+        public class MockBankHistory : IHistory
         {
             public long ammount;
             public TransferType type;
-            public long toAccount;
+            public string toAccount;
 
-            public MockBankHistory(long ammount, TransferType type, long toAccount)
+            public MockBankHistory(long ammount, TransferType type, string toAccount)
             {
                 this.ammount = ammount;
                 this.type = type;
                 this.toAccount = toAccount;
             }
 
-            public string toString()
+            public string getText()
             {
                 switch(this.type)
                 {
@@ -54,8 +114,8 @@ namespace BaknUnitTests
         }
 
 
-        private long ValidBankAccount = 12345;
-        private long InvalidBankAccount = 54321;
+        private string ValidBankAccount = "123456";
+        private string InvalidBankAccount = "1234567";
 
         private MockDbContext dbContext;
         private IBank bank;
@@ -69,13 +129,29 @@ namespace BaknUnitTests
         [Fact]
         public void ShouldErrorOnInvalidBankAccount()
         {
-            Assert.Throws<InvalidBankNumber>("Invalid bank account number is valid", () => new DefaultBank(this.InvalidBankAccount));
+            try
+            {
+                new DefaultBank(this.dbContext, this.InvalidBankAccount);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
-        public async void ShouldErrorWhenAtmAddZero()
+        public void ShouldErrorWhenAtmAddZero()
         {
-            await Assert.ThrowsAsync<InvalidBankNumber>("Invalid state - add/remove 0 money to/from ATM", () => this.updateATM(0));
+            try
+            {
+                this.updateATM(0);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
@@ -96,27 +172,54 @@ namespace BaknUnitTests
         public void ShouldNotWithdrawFromAtmWhenNotEnoughMoney()
         {
             this.dbContext.balance = 49;
-            Assert.ThrowsAsync<NotEnoughMoney>("Should not able to get from ATM while balance lesser than wanted", () => this.bank.UpdateATM(-50) );
+
+            try
+            {
+                this.bank.UpdateATM(-50);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
+
         }
 
         private void updateATM(int money)
         {
-            long bankAccountBefore = this.dbContext.balance;
+            double bankAccountBefore = this.dbContext.balance;
             this.bank.UpdateATM(money);     
             Assert.Equal(bankAccountBefore + money, this.dbContext.balance);
         }
 
         [Fact]
-        public async void ShouldNotTransferWhileNotEnoughtMoney()
+        public void ShouldNotTransferWhileNotEnoughtMoney()
         {
             this.dbContext.balance = 0;
-            await Assert.ThrowsAsync<NotEnoughMoney>("Invalid bank account while transfer", () => this.bank.UpdateTransfer(this.ValidBankAccount, -50));
+
+            try
+            {
+                this.bank.UpdateTransfer(this.ValidBankAccount, -50);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
-        public async void ShouldErrorWhenTransferToInvalidBankNumber()
+        public void ShouldErrorWhenTransferToInvalidBankNumber()
         {
-            await Assert.ThrowsAsync<InvalidBankNumber>("Invalid bank account while transfer", () => this.bank.UpdateTransfer(this.InvalidBankAccount, -50));
+            try
+            {
+                this.bank.UpdateTransfer(this.InvalidBankAccount, -50);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
@@ -127,9 +230,17 @@ namespace BaknUnitTests
         }
 
         [Fact]
-        public async void ShouldErrorWhenReceiveFromInvalidBankNumber()
+        public void ShouldErrorWhenReceiveFromInvalidBankNumber()
         {
-            await Assert.ThrowsAsync<InvalidBankNumber>("Invalid bank account while transfer", () => this.bank.UpdateTransfer(this.InvalidBankAccount, 50));
+            try
+            {
+                this.bank.UpdateTransfer(this.InvalidBankAccount, 50);
+                Assert.True(false);
+            }
+            catch (ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
@@ -139,9 +250,17 @@ namespace BaknUnitTests
         }
 
         [Fact]
-        public async void ShouldErrorWhenSendOrReceiveZero()
+        public void ShouldErrorWhenSendOrReceiveZero()
         {
-            await Assert.ThrowsAsync<InvalidBankNumber>("Invalid bank account while transfer", () => this.bank.UpdateTransfer(this.ValidBankAccount, 0));
+            try
+            {
+                this.bank.UpdateTransfer(this.ValidBankAccount, 0);
+                Assert.True(false);
+            }
+            catch(ArgumentException)
+            {
+                Assert.True(true);
+            }
         }
 
         [Fact]
@@ -152,19 +271,22 @@ namespace BaknUnitTests
 
             this.dbContext.balance = 0;
 
-            Assert.ThrowsAsync<NotEnoughMoney>("Should not give credit while client has low account balance", () => this.bank.Credit(creditValue, months);
+            Assert.ThrowsAsync<ArgumentException>("Should not give a credit while client has low account balance", () => Task.Run(() => this.bank.Credit(creditValue, months)));
         }
 
         [Fact]
         public void ShouldBeAbleToGetCredit()
         {
+
+            const int creditValue = 20000;
+            const int months = 12 * 3;
+
             this.dbContext.creditMonths = 0;
             this.dbContext.creditAmmount = 0;
 
-            int creditValue = 20000;
-            int months = 12 * 3;
+            this.dbContext.balance = creditValue * this.dbContext.minimalCreditBalace;
 
-            long balanceBefore = this.dbContext.balance;
+            double balanceBefore = this.dbContext.balance;
             this.bank.Credit(creditValue, months);
 
             Assert.Equal(balanceBefore + creditValue, this.dbContext.balance);
@@ -173,17 +295,25 @@ namespace BaknUnitTests
         [Fact]
         public void ShouldReviewCreditState()
         {
-            this.dbContext.creditMonths = 0;
-            this.dbContext.creditAmmount = 0;
-            this.dbContext.creditStart = DateTime.Now.AddMonths(-5);
-
             int creditValue = 20000;
             int months = 12 * 3;
+            const int monthsPassed = 5;
 
-            long balanceBefore = this.dbContext.balance;
+            this.dbContext.creditMonths = 0;
+            this.dbContext.creditAmmount = 0;
+            this.dbContext.creditMonthsPassed = monthsPassed;
+
+            this.dbContext.balance = creditValue * this.dbContext.minimalCreditBalace;
+
+            double creditWithLoan = creditValue * this.dbContext.loanInterestRate;
+            double creditAfterPassedMonths = creditWithLoan - (creditWithLoan / months) * monthsPassed;
+
+
             this.bank.Credit(creditValue, months);
 
-            Assert.Equal(20000, this.bank.CreditStatus());
+
+            Assert.Equal(creditAfterPassedMonths, this.bank.CreditAmmountLeft());
+            Assert.Equal(months - monthsPassed, this.bank.CreditMonthsLeft());
         }
 
         [Fact]
@@ -191,14 +321,16 @@ namespace BaknUnitTests
         {
             int money = 50;
 
-            List<string> expected = new List<string>();
-            expected.Add((new MockBankHistory(money, TransferType.InsertATM, this.ValidBankAccount)).toString());
-            expected.Add((new MockBankHistory(money, TransferType.InsertATM, this.ValidBankAccount)).toString());
+            List<IHistory> expected = new List<IHistory>();
+            expected.Add((new MockBankHistory(money, TransferType.InsertATM, this.ValidBankAccount)));
+            expected.Add((new MockBankHistory(money, TransferType.InsertATM, this.ValidBankAccount)));
 
             this.bank.UpdateATM(money);
             this.bank.UpdateATM(money);
-            
-            Assert.Equal(expected, this.bank.GetHistory());
+
+            var expectedResult = expected.Select(item => item.getText()).ToArray();
+            var result= this.bank.GetHistory().Select(item => item.getText()).ToArray();
+            Assert.Equal(expectedResult, result);
         }
     }
 }

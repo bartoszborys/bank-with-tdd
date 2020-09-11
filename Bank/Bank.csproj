@@ -58,11 +58,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Abstractions\IHistory.cs" />
     <Compile Include="Abstractions\IBank.cs" />
     <Compile Include="Abstractions\IDatabase.cs" />
     <Compile Include="DefaultBank\DefaultBank.cs" />
-    <Compile Include="Exceptions\InvalidBankNumber.cs" />
-    <Compile Include="Exceptions\NotEnoughMoney.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
